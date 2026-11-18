@@ -1,0 +1,5 @@
+.venv/
+venv_lab4_1/
+venv_lab4_2/
+cache/
+__pycache__/
