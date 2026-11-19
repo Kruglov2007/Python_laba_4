@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import csv
+import argparse
 
 #Функция подготовки названия страны
 def clear_str(text):
@@ -22,8 +23,8 @@ def list_url(file):
         return urls
 
 
-def parser():
-    urls = list_url('countries.txt')
+def parser(input_file='countries.txt', output_file='countries_data.csv'):
+    urls = list_url(input_file)
     if not urls:
         print("Файл countries.txt пуст или не найден!")
         return
@@ -120,7 +121,7 @@ def parser():
 
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при запросе к {url}: {e}")
-    with open("countries_data.csv", "w", newline="", encoding="utf-8-sig") as file:
+    with open(output_file, "w", newline="", encoding="utf-8-sig") as file:
         writer = csv.writer(file, delimiter=';')
         writer.writerow(["country","city","area","population"])
         writer.writerows(data)
@@ -129,4 +130,16 @@ def parser():
 
 
 if __name__ == "__main__":
-    parser()
+    argument_parser=argparse.ArgumentParser()
+    argument_parser.add_argument(
+        '--input',
+        default='countries.txt',
+        help='Имя входного файла'
+    )
+    argument_parser.add_argument(
+        '--output',
+        default='countries_data.csv',
+        help='Имя выходного файла'
+    )
+    args = argument_parser.parse_args()
+    parser(args.input, args.output)
