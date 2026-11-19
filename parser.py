@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+import csv
 
 #Функция подготовки названия страны
 def clear_str(text):
@@ -30,8 +31,10 @@ def parser():
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     session = requests.Session()
+    data=[]
 
     for url in urls:
+        country = url.split('/')[-1].replace('_', ' ')
         print(f"\nЗапускаем тест для ссылки: {url}")
         try:
             response = session.get(url, headers=headers, timeout=10)
@@ -52,6 +55,10 @@ def parser():
                 parsing_pop_section = False
                 area_found = False
                 pop_found = False
+
+                city = ''
+                area = ''
+                population = ''
 
                 for row in infobox.find_all("tr"):
                     header = row.find("th")
@@ -89,7 +96,8 @@ def parser():
 
                         if "land" not in header_text and "metropolitan" not in header_text:
                             if "total" in header_text or header_text == "area":
-                                print(f"Площадь: {clean_value.split()[0]}")
+                                area = clean_value.split()[0]
+                                print(f"Площадь: {area}")
                                 area_found = True  # Блокируем дальнейший поиск площади для этой страны
                                 parsing_area_section = False
 
@@ -101,16 +109,21 @@ def parser():
                                 for word in ["increase", "decrease", "neutral"]:
                                     clean_value = clean_value.lower().replace(word, "").strip()
 
-
-                                print(f"Население : {clean_value.split()[0][:-3].capitalize()}")
+                                population = clean_value.split()[0][:-3].capitalize()
+                                print(f"Население : {population}")
                                 pop_found = True  # Блокируем дальнейший поиск населения для этой страны
                                 parsing_pop_section = False
-
+                data.append([country,city, area, population])
             else:
                 print("Не удалось найти карточку 'infobox' на странице.")
+                continue
 
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при запросе к {url}: {e}")
+    with open("countries_data.csv", "w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.writer(file, delimiter=';')
+        writer.writerow(["country","city","area","population"])
+        writer.writerows(data)
 
     session.close()
 
