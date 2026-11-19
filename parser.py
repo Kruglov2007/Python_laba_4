@@ -1,72 +1,119 @@
-from urllib import response
-
 import requests
 from bs4 import BeautifulSoup
+
 #Функция подготовки названия страны
 def clear_str(text):
     if not text:
         return ''
     return text.strip().replace(' ', '_')
+
 #Функция создания списка url
 def list_url(file):
     urls = []
-    with open(file, 'r') as f:
-        for line in f:
-            urls.append(f"https://en.wikipedia.org/wiki/{clear_str(line)}")
+    try:
+        with open(file, 'r', encoding='utf-8') as f:
+            for line in f:
+                clean_line = clear_str(line)
+                if clean_line:
+                    urls.append(f"https://en.wikipedia.org/wiki/{clean_line}")
+        return urls
+    except FileNotFoundError:
         return urls
 
-# def parser():
-#     urls = list_url('countries.txt')
-#     if not urls:
-#         print("Файл countries.txt пуст или не найден!")
-#         return
-#
-#     # Берем пока только самую первую страну для теста
-#     test_url = urls[0]
-#     print(f"Запускаем тест для ссылки: {test_url}")
-#
-#     session = requests.Session()
-#     headers = {
-#         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-#     }
-#
-#     response = session.get(test_url, headers=headers, timeout=10)
-#     print(f"Код ответа от Википедии: {response.status_code}")
-#
-#     soup = BeautifulSoup(response.text, 'html.parser')
-#     infobox = soup.find('table', class_='infobox')
-#
-#     if infobox:
-#         print("\n--- Результаты парсинга infobox ---")
-#         for row in infobox.find_all('tr'):
-#             header = row.find('th')
-#             value_td = row.find('td')
-#
-#             if header and value_td:
-#                 header_text = header.text.strip().lower()
-#
-#                 # Ищем столицу (Capital)
-#                 if 'capital' in header_text:
-#                     print("Столица:", value_td.text.strip())
-#
-#                 # Ищем площадь (Area)
-#                 if 'area' in header_text:
-#                     print("Площадь (грязные данные):", value_td.text.strip())
-#
-#                 # Ищем население (Population)
-#                 if 'population' in header_text:
-#                     print("Население (основная строка):", value_td.text.strip())
-#                     # Википедия часто переносит само число на строку ниже.
-#                     # Давай проверим следующую строчку таблицы:
-#                     next_row = row.find_next_sibling('tr')
-#                     if next_row and next_row.find('td'):
-#                         print("Население (значение ниже):", next_row.find('td').text.strip())
-#     else:
-#         print("Не удалось найти карточку 'infobox' на странице.")
-#     session.close()
-#
-#
-#
-#
-# if __name__ == "__main__":
-#     parser()
+
+def parser():
+    urls = list_url('countries.txt')
+    if not urls:
+        print("Файл countries.txt пуст или не найден!")
+        return
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    session = requests.Session()
+
+    for url in urls:
+        print(f"\nЗапускаем тест для ссылки: {url}")
+        try:
+            response = session.get(url, headers=headers, timeout=10)
+            print(f"Код ответа от Википедии: {response.status_code}")
+
+            if response.status_code != 200:
+                print(f"Не удалось загрузить страницу: {url}")
+                continue
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            infobox = soup.find("table", class_="infobox")
+
+            if infobox:
+                print("--- Результаты парсинга infobox ---")
+
+                # Флаги для отслеживания
+                parsing_area_section = False
+                parsing_pop_section = False
+                area_found = False
+                pop_found = False
+
+                for row in infobox.find_all("tr"):
+                    header = row.find("th")
+                    value_td = row.find("td")
+
+                    if not header:
+                        continue
+
+                    header_text = header.text.strip().lower()
+
+                    # СЦЕНАРИЙ 1: Заголовок-подраздел БЕЗ значения в текущей строке (Канада)
+                    if not value_td:
+                        if "area" in header_text:
+                            parsing_area_section = True
+                            parsing_pop_section = False
+                        elif "population" in header_text:
+                            parsing_pop_section = True
+                            parsing_area_section = False
+                        elif header.get('colspan') or 'infobox-header' in header.get('class', []):
+                            parsing_area_section = False
+                            parsing_pop_section = False
+                        continue
+
+                    # СЦЕНАРИЙ 2: Строка содержит и заголовок, и значение <td>
+                    clean_value = value_td.text
+
+                    # --- ПОИСК СТОЛИЦЫ ---
+                    if "capital" in header_text and not (parsing_area_section or parsing_pop_section):
+                        a_tag = value_td.find('a')
+                        city = a_tag.text.strip() if a_tag else value_td.text.strip()
+                        print(f"Столица: {city}")
+
+                    # --- ПОИСК ПЛОЩАДИ (С ОГРАНИЧИТЕЛЕМ) ---
+                    elif (parsing_area_section or "area" in header_text) and not area_found:
+
+                        if "land" not in header_text and "metropolitan" not in header_text:
+                            if "total" in header_text or header_text == "area":
+                                print(f"Площадь: {clean_value.split()[0]}")
+                                area_found = True  # Блокируем дальнейший поиск площади для этой страны
+                                parsing_area_section = False
+
+                    # --- ПОИСК НАСЕЛЕНИЯ (С ОГРАНИЧИТЕЛЕМ) ---
+                    elif (parsing_pop_section or "estimate" in header_text) and not pop_found:
+                        if "estimate" in header_text:
+                            # Строго игнорируем строки с уточнением "metropolitan" (как у Франции)
+                            if "metropolitan" not in header_text:
+                                for word in ["increase", "decrease", "neutral"]:
+                                    clean_value = clean_value.lower().replace(word, "").strip()
+
+
+                                print(f"Население : {clean_value.split()[0][:-3].capitalize()}")
+                                pop_found = True  # Блокируем дальнейший поиск населения для этой страны
+                                parsing_pop_section = False
+
+            else:
+                print("Не удалось найти карточку 'infobox' на странице.")
+
+        except requests.exceptions.RequestException as e:
+            print(f"Ошибка при запросе к {url}: {e}")
+
+    session.close()
+
+
+if __name__ == "__main__":
+    parser()
